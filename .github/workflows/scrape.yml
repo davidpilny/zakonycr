@@ -1,0 +1,72 @@
+name: Scrape Czech Laws
+
+on:
+  # Run automatically every day at 03:00 UTC
+  schedule:
+    - cron: "0 3 * * *"
+
+  # Allow manual triggering from the Actions tab
+  workflow_dispatch:
+    inputs:
+      force_full:
+        description: "Force a full re-sync (ignore last-sync state)"
+        required: false
+        default: "false"
+        type: boolean
+
+jobs:
+  scrape:
+    name: Fetch and commit updated laws
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so the commit step works correctly
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scraper
+        env:
+          ESBIRKA_API_KEY: ${{ secrets.ESBIRKA_API_KEY }}
+          LAWS_DIR: laws
+        run: |
+          if [ "${{ inputs.force_full }}" = "true" ]; then
+            python -m scraper.cli sync --force
+          else
+            python -m scraper.cli sync --incremental
+          fi
+
+      - name: Show storage stats
+        run: python -m scraper.cli stats
+
+      - name: Check for changes
+        id: changes
+        run: |
+          git add laws/
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit updated laws
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          git commit -m "chore(laws): automated sync ${TIMESTAMP}"
+          git push origin HEAD
