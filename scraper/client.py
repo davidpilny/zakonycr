@@ -75,6 +75,13 @@ class ESbirkaClient:
         self.api_key = resolved_key
         self.base_url = base_url.rstrip("/")
         self._session = _build_session(resolved_key)
+        if not resolved_key:
+            logger.warning(
+                "No API key configured. Requests to e-Sbírka will likely be "
+                "rejected with HTTP 401. Obtain a key at "
+                "https://e-sbirka.gov.cz/restful-api and set it via the "
+                "ESBIRKA_API_KEY environment variable or the --api-key flag."
+            )
 
     # ------------------------------------------------------------------
     # Low-level helpers

@@ -60,10 +60,19 @@ class TestESbirkaClientConstruction:
         client = ESbirkaClient(base_url="http://localhost/")
         assert client.base_url == "http://localhost"
 
+    def test_logs_warning_when_no_api_key(self, monkeypatch, caplog):
+        import logging
+        monkeypatch.delenv("ESBIRKA_API_KEY", raising=False)
+        with caplog.at_level(logging.WARNING, logger="scraper.client"):
+            ESbirkaClient()
+        assert any("No API key" in r.message for r in caplog.records)
 
-# ---------------------------------------------------------------------------
-# Helpers for mocking HTTP
-# ---------------------------------------------------------------------------
+    def test_no_warning_when_api_key_provided(self, caplog):
+        import logging
+        with caplog.at_level(logging.WARNING, logger="scraper.client"):
+            ESbirkaClient(api_key="some-key")
+        assert not any("No API key" in r.message for r in caplog.records)
+
 
 def _mock_response(data: object, status: int = 200) -> MagicMock:
     resp = MagicMock()

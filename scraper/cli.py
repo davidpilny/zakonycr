@@ -11,16 +11,26 @@ Usage examples::
     # Force a fresh full sync even if state exists
     python -m scraper.cli sync --force
 
-    # Show storage statistics
+    # Show storage statistics (no API key needed)
     python -m scraper.cli stats
 
     # Fetch a single law by number/year
     python -m scraper.cli fetch 89 2012
 
+    # Pass the API key explicitly instead of via the environment variable
+    python -m scraper.cli --api-key MY_KEY sync
+
 Environment variables
 ---------------------
-ESBIRKA_API_KEY   API key for the e-Sbírka REST API (required for full access)
+ESBIRKA_API_KEY   API key for the e-Sbírka REST API (required for full access).
+                  Alternatively use the ``--api-key`` flag.
 LAWS_DIR          Directory to store law files (default: ``laws/``)
+
+Obtaining an API key
+--------------------
+Register at the Ministry of Interior and request access:
+https://e-sbirka.gov.cz/restful-api
+The ``stats`` sub-command works without a key because it only reads local files.
 """
 
 from __future__ import annotations
@@ -37,6 +47,22 @@ from .scraper import Scraper
 from .storage import LawStorage
 
 
+_NO_KEY_MESSAGE = """\
+Warning: No API key provided.
+  The e-Sbírka API requires authentication for most endpoints.
+  Requests will likely fail with HTTP 401 (Unauthorized).
+
+  How to get a key:
+    1. Fill in the registration form at https://e-sbirka.gov.cz/restful-api
+    2. Submit it to the Ministry of Interior via data-box.
+    3. You will receive an API key by email.
+
+  Once you have a key, provide it in one of two ways:
+    * Environment variable:  export ESBIRKA_API_KEY="your-key"
+    * CLI flag:              python -m scraper.cli --api-key "your-key" sync
+"""
+
+
 def _setup_logging(verbose: bool) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
@@ -50,12 +76,19 @@ def _laws_dir() -> str:
     return os.environ.get("LAWS_DIR", "laws")
 
 
+def _warn_if_no_key(client: ESbirkaClient) -> None:
+    """Print a clear, actionable warning if the client has no API key."""
+    if not client.api_key:
+        print(_NO_KEY_MESSAGE, file=sys.stderr)
+
+
 # ------------------------------------------------------------------
 # Sub-command: sync
 # ------------------------------------------------------------------
 
 def cmd_sync(args: argparse.Namespace) -> int:
-    client = ESbirkaClient()
+    client = ESbirkaClient(api_key=args.api_key)
+    _warn_if_no_key(client)
     storage = LawStorage(_laws_dir())
     force_full = args.force or not args.incremental
 
@@ -90,7 +123,8 @@ def cmd_sync(args: argparse.Namespace) -> int:
 # ------------------------------------------------------------------
 
 def cmd_fetch(args: argparse.Namespace) -> int:
-    client = ESbirkaClient()
+    client = ESbirkaClient(api_key=args.api_key)
+    _warn_if_no_key(client)
     storage = LawStorage(_laws_dir())
 
     year: int = args.year
@@ -141,6 +175,15 @@ def build_parser() -> argparse.ArgumentParser:
         "-v", "--verbose",
         action="store_true",
         help="Enable debug logging.",
+    )
+    parser.add_argument(
+        "--api-key",
+        default=None,
+        metavar="KEY",
+        help=(
+            "e-Sbírka API key. Overrides the ESBIRKA_API_KEY environment "
+            "variable. Obtain a key at https://e-sbirka.gov.cz/restful-api"
+        ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
